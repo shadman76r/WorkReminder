@@ -7,10 +7,16 @@ function App() {
   const [reminders, setReminders] = useState([]);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    loadReminders();
-  }, []);
+ useEffect(() => {
+  loadReminders();
 
+  if (window.electronAPI) {
+    window.electronAPI.onReminderAlert((reminder) => {
+      alert(`Reminder: ${reminder.title}`);
+      loadReminders();
+    });
+  }
+}, []);
   const loadReminders = async () => {
     try {
       if (!window.electronAPI) {
