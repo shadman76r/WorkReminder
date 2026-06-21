@@ -2,14 +2,16 @@ const { app, BrowserWindow, Notification, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
-let mainWindow;
-let reminders = [];
 let dataPath;
+
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.taskping.reminder");
+}
 
 function createWindow() {
   dataPath = path.join(app.getPath("userData"), "reminders.json");
 
-  mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 900,
     height: 650,
     webPreferences: {
@@ -19,7 +21,7 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadURL("http://localhost:5173");
+  win.loadURL("http://localhost:5173");
 }
 
 function readReminders() {
@@ -31,43 +33,54 @@ function readReminders() {
   }
 }
 
-function saveReminders() {
+function saveReminders(reminders) {
   fs.writeFileSync(dataPath, JSON.stringify(reminders, null, 2));
 }
 
+function showReminder(reminder) {
+  console.log("Reminder triggered:", reminder.title);
+
+  if (Notification.isSupported()) {
+    new Notification({
+      title: "TaskPing Reminder",
+      body: reminder.title,
+      silent: false,
+    }).show();
+  }
+
+  if (BrowserWindow.getAllWindows().length > 0) {
+    BrowserWindow.getAllWindows()[0].webContents.send("reminder-alert", reminder);
+  }
+}
+
 ipcMain.handle("get-reminders", () => {
-  reminders = readReminders();
-  return reminders;
+  return readReminders();
 });
 
 ipcMain.handle("add-reminder", (event, reminder) => {
-  reminders = readReminders();
+  const reminders = readReminders();
   reminders.push(reminder);
-  saveReminders();
+  saveReminders(reminders);
   return reminders;
 });
 
 ipcMain.handle("delete-reminder", (event, id) => {
-  reminders = readReminders().filter((r) => r.id !== id);
-  saveReminders();
+  const reminders = readReminders().filter((r) => r.id !== id);
+  saveReminders(reminders);
   return reminders;
 });
 
 setInterval(() => {
   if (!dataPath) return;
 
-  reminders = readReminders();
-  const now = new Date();
+  const reminders = readReminders();
+  const now = Date.now();
 
   let changed = false;
 
-  reminders = reminders.map((r) => {
-    if (!r.done && new Date(r.time).getTime() <= now.getTime()) {
-      new Notification({
-        title: "TaskPing Reminder",
-        body: r.title,
-      }).show();
-
+  const updated = reminders.map((r) => {
+    if (!r.done && new Date(r.time).getTime() <= now) {
+      showReminder(r);
       changed = true;
       return { ...r, done: true };
     }
@@ -75,7 +88,9 @@ setInterval(() => {
     return r;
   });
 
-  if (changed) saveReminders();
-}, 3000);
+  if (changed) {
+    saveReminders(updated);
+  }
+}, 1000);
 
 app.whenReady().then(createWindow);
